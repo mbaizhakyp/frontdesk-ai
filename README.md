@@ -1,36 +1,60 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Reception Suite
 
-## Getting Started
+AI front desk for local service businesses — answers calls and texts, books
+appointments, follows up on every lead instantly, and shows the owner the revenue
+it recovers. Multi-tenant and vertical-agnostic: a business is a config
+(`config/dental.ts`, `config/hvac.ts`), not a fork of the code.
 
-First, run the development server:
+## Architecture
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- **Next.js (App Router) on Vercel** — webhooks, tool endpoints, dashboard
+- **Supabase (Postgres)** — calls, leads, appointments, messages
+- **Vapi/Retell** — voice agent + telephony (rented, not built)
+- **Twilio** — SMS (missed-call text-back, speed-to-lead, confirmations)
+- **Cal.com** — booking (stubbed in `lib/calcom.ts` until first client)
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Endpoints
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Route | Purpose |
+|---|---|
+| `POST /api/vapi/events` | Call lifecycle webhook — logs calls, fires missed-call text-back |
+| `POST /api/vapi/tools/check-availability` | Agent tool — read open slots |
+| `POST /api/vapi/tools/book` | Agent tool — book + text confirmation |
+| `POST /api/twilio/sms` | Inbound SMS webhook |
+| `POST /api/lead` | Web form → lead + instant speed-to-lead text |
+| `GET /api/cron/followup` | Drip follow-up for stale leads (Vercel cron) |
+| `/dashboard` | The demo "wow" — calls, leads, bookings, $ recovered |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Setup checklist
 
-## Learn More
+1. **Accounts:** create [Supabase](https://supabase.com), [Vapi](https://vapi.ai)
+   (or [Retell](https://retellai.com)), [Twilio](https://twilio.com), [Cal.com](https://cal.com).
+2. **Env:** `cp .env.example .env.local` and fill in keys.
+3. **Database:** open the Supabase SQL editor → paste & run `supabase/schema.sql`.
+4. **Seed demo tenants:** `npx tsx scripts/seed.ts` (creates the dental + HVAC demos).
+5. **Run:** `npm run dev` → open `/dashboard`.
+6. **Voice agent (Vapi):** create an assistant; set its system prompt from
+   `renderSystemPrompt(dentalConfig)` (see `lib/config.ts`); add two tools pointing at
+   your deployed `/api/vapi/tools/check-availability` and `/book`; set the server URL to
+   `/api/vapi/events`; put `{ "slug": "demo-dental" }` in the assistant metadata. Buy a
+   phone number and attach the assistant. **Call it — that's M1.**
+7. **SMS:** set the Twilio number's messaging webhook to `/api/twilio/sms`. Start
+   **A2P 10DLC registration now** (required before production texting; takes days–weeks).
+8. **Deploy:** push to GitHub → import to Vercel → add the same env vars → the cron in
+   `vercel.json` runs the follow-up drip automatically.
 
-To learn more about Next.js, take a look at the following resources:
+## Milestones (full spec in ../trustmrr-analyzer/prospects/product-spec.md)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- **M0 Setup** — this scaffold ✅
+- **M1 Receptionist answers** — wire Vapi, call the number
+- **M2 Booking** — connect Cal.com in `lib/calcom.ts`
+- **M3 Text-back + speed-to-lead** — add Twilio creds; test the web form + missed call
+- **M4 Dashboard** — add Supabase realtime for live updates
+- **M5 2nd vertical** — already wired (`demo-hvac`); flip with config
+- **M6 Reviews** — phase 2
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Compliance notes
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **A2P 10DLC** before production SMS; **TCPA** consent for outbound/marketing texts.
+- Keep dental health details out of stored data (PHI/HIPAA); revisit a BAA if you scale dental.
+- Verify webhook signatures (Vapi, Twilio) before trusting payloads — marked as TODOs in the routes.
