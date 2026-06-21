@@ -35,6 +35,13 @@ async function seed(c: AgentConfig) {
   console.log(`seeded ${c.slug} (${tenant.id})`);
 }
 
-await seed(dentalConfig);
-await seed(hvacConfig);
-console.log("done");
+async function main() {
+  await seed(dentalConfig);
+  await seed(hvacConfig);
+  console.log("done");
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
